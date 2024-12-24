@@ -1,0 +1,270 @@
+---
+title: "CGS698C, Lectures 19-20: Bayesian hierarchical models"
+runningheader: "Bayesian models & data analysis" # only for pdf output
+subtitle: "Bayesian models & data analysis" # only for html output
+author: "Himanshu Yadav"
+date: "`r Sys.Date()`"
+output:
+  tufte::tufte_handout: default
+  tufte::tufte_html:
+    citation_package: natbib
+    latex_engine: xelatex
+  tufte::tufte_book:
+    citation_package: natbib
+    latex_engine: xelatex
+bibliography: fombiblio.bib
+link-citations: yes
+header-includes: |
+  \usepackage{tikz}
+  \usepackage{enumerate}
+  \usepackage[shortlabels]{enumitem}
+  \usepackage{amsmath}
+  \usepackage{comment}
+  \geometry{
+  left=25mm, % left margin
+  textwidth=160mm, % main text block
+  marginparsep=0mm, % gutter between main text block and margin notes
+  marginparwidth=25mm % width of margin notes
+  }
+  \setcounter{secnumdepth}{3}
+---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(fig.width=6.5, fig.height=3)
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+library(stats)
+library(brms)
+library(bayesplot)
+library(invgamma)
+library(TruncatedNormal)
+library(truncnorm)
+
+
+graph_book <- function(n_grid){
+  p <- ggplot(data.frame(x=1:n_grid,y=1:n_grid),aes(x,y))+
+    geom_blank()+theme_bw()+scale_x_continuous(breaks=1:n_grid)+
+    scale_y_continuous(breaks = 1:n_grid)+
+    theme(axis.text = element_blank())+xlab("")+ylab("")+
+    theme(title = element_text(size=10),
+          panel.border = element_blank(),
+          axis.ticks = element_blank())
+  return(p)
+}
+```
+
+
+\newcommand{\mybox}[1]{%
+         \begin{center}%
+            \begin{tikzpicture}%
+                \node[rectangle, draw=black!40, top color=white!95!black, bottom color=white!95!black, rounded corners=5pt, inner xsep=5pt, inner ysep=6pt, outer ysep=10pt]{
+                \begin{minipage}{0.99\linewidth}#1\end{minipage}};%
+            \end{tikzpicture}%
+         \end{center}%
+}
+
+
+\tableofcontents
+
+\vspace{3cm}
+
+See chapters 5 of the book "An Introduction to Bayesian Data Analysis for Cognitive Science (https://vasishth.github.io/bayescogsci/book/)" for reference.
+
+\clearpage
+
+\section{Do observations from human experiements always follow the i.i.d assumption?}
+
+Human experiments are typically based on a sample of individuals from the population. \textbf{From each individual in the sample, repeated measurements are collected}. For example, in the word recognition experiments, we collect recognition times for multiple words from each participant, i.e., we collect repeated measures from each participant. Do such data follow the i.i.d./ assumption?
+
+This question is important because in real-life datasets, we often see \textit{clusters}. If ten players participate in a disc throwing game, their throw-distance scores would contain clusters. Some players might on average throw at longer distances than others; some players are more consistent across their attempts than others. 
+
+Similarly, in the word recognition times, the average recognition time could differ across individuals due to their varying exposure to language, reading habbits, etc. Some individuals may cluster as fast word readers and others as slow word readers. 
+
+Do observations with such clusters follow the i.i.d.\ assumption?
+
+Not necessarily! These observations may not absolutely follow the i.i.d. assumption. However, they would follow a conditional i.i.d. assumption based on the underlying distribution of data. 
+
+For example, we cannot say that each word recognition time is independent and comes from a distribution $p$. But we can say that word recognition times for the participant $j$ come from a distribution $p_j$ such that each $p_j$ depends on a population-level distribution $q$.
+
+Thus, data with such clusters can be viewed as a sequence of i.i.d. random variables where the order of these random variables does not matter. More formally, such observations follow the \textbf{exchangeability assumption}. 
+
+\section{Exchangeability}
+
+A sequence of random variables $X_1$, $X_2$, $X_3$, $X_4$, .... is said to be \textit{exchangeable} if the joint probability distribution does not change when the order of the sequence $X_1 , X_2 , X_3 , ...$ is altered. 
+
+Formally, an exchangeable sequence of random variables is a finite or infinite sequence $X_1, X_2, X_3, ...$ of random variables such that for any finite permutation of the indices $1, 2, 3, ...$, the joint probability distribution of the permuted sequence remains the same.
+
+A sequence of random variables that are i.i.d, conditional on some underlying distributional form, is exchangeable.
+
+How to model the exchangeable random variables?
+
+\section{Bayesian Hierarchical models}
+
+Suppose, in an experiment, you are asked to identify a triangle among many other shapes shown on a screen. Your response time is being recorded.
+
+The experimenter hypothesizes that the background color of the screen ("black" or "blue") affects your response time.
+
+We do not have any further information about how exactly the background color affects the response time.
+
+We can assume a linear relationship between the background color and the response time. Such that, \textbf{the mean response time changes as a linear function of the background color}.
+
+However, some participants might be in general faster on this shape recognition task than others due to several reasons like their faster motor movements, faster visual processing, etc.
+
+Suppose $rt_i$ is the response time in the $i^{th}$ observation. We can write:
+
+\begin{equation}
+rt_i \sim Normal(\mu_i, \sigma)
+\end{equation}
+
+\noindent $\mu_i$ is the underlying average response time in the $i^{th}$ observation; $\mu_i$ can be given by
+
+\begin{equation}
+\mu_i = \alpha_{subj[i]} + \beta X_i
+\end{equation}
+
+\noindent where $X_i$ is the background color in the $i^{th}$ observation and can take values $0$ (for "black") or $1$ (for "blue"); $alpha_{subj[i]}$ is the intercept of the straight line for the subject who produced the $i^{th}$, and $\beta$ is the slope of the straight line.
+
+Now, the intercept parameter is not a single parameter anymore. We have a separate $alpha$ for each subject. Hence, there are as many $\alpha$ as many subjects in data. But all these subject-level intercepts follow a certain distribution. For example, we can say
+
+\begin{equation}
+\alpha_{subj[i]} \sim Normal(\alpha, \tau)
+\end{equation}
+
+\noindent where $\alpha$ is the population-level intercept and $\tau$ is the standard deviation of subject-level intercepts; $\tau$ depicts the extent of individual differences in the population.
+
+
+You can set priors on $\alpha$, $\beta$, $\sigma$, and $\tau$.
+
+\begin{equation*}
+\alpha \sim Normal(300,50)
+\end{equation*}
+
+\begin{equation*}
+\beta \sim Normal(0,20)
+\end{equation*}
+
+\begin{equation*}
+\sigma \sim Normal_+(0,10)
+\end{equation*}
+
+\begin{equation*}
+\tau \sim Normal_+(0,10)
+\end{equation*}
+
+You can estimate the parameters $\alpha$, $\beta$, $\sigma$, and $\tau$ using \textbf{brms}; we are primarily interested in the estimates of $\beta$ because we want to test the experimenter's hypothesis that said $\beta \neq 0$.
+
+\subsection{Inferences based on posterior estimates}
+
+```{r}
+# Data
+alpha <- 250
+beta <- 20
+sigma <- 10
+tau <- 15
+
+subj <- rep(1:10,each=10)
+X <- rep(0:1,50)
+rt <- rep(NA,100)
+dat <- data.frame(subj=subj,X=X,rt=rt)
+alpha_j <- rnorm(10,alpha,tau)
+dat$alpha_subj <- rep(alpha_j,each=10)
+dat$subj <- factor(dat$subj)
+for(i in 1:nrow(dat)){
+  dat$rt[i] <- rnorm(1,dat$alpha_subj[i] + beta*X[i],sigma)
+}
+head(dat)
+```
+
+```{r eval=FALSE}
+# Define priors
+priors <- c(prior(normal(300, 50), class = Intercept),          
+            prior(normal(0, 20), class = b, coef=X),
+            prior(normal(0, 10), class = sigma),
+            prior(normal(0, 10), class = sd))
+
+# Fit the model (estimate parameters)
+mfit <- 
+  brm(formula = rt ~ 1+X + (1|subj),
+      data=dat,
+      family = gaussian(),
+      prior = priors,
+      chains = 4,cores = 4,
+      iter = 2000,warmup = 1000)
+
+save(mfit,file="FittedModels/Hierarchical-linear-regression.Rda")
+```
+
+```{r include=FALSE}
+load("FittedModels/Hierarchical-linear-regression.Rda")
+```
+
+```{r}
+summary(mfit)
+```
+
+Based on the above posterior estimates, you can say the following:
+
+\begin{enumerate}
+\item The data are consistent with the experimenter's hypothesis that background color affects the response times because the 95\% credible interval for $beta$ is completely in the positive direction and does not cross zero.
+\item The data suggest that $\beta > 0$, i.e., the mean response time is higher when the background color is blue.
+\end{enumerate}
+
+However, you cannot say that there is \textbf{evidence} for the experimenter's hypothesis. Because the evidence for any model assumption is always computed with respect to a baseline model assumption. No model is absolutely correct; a model can be relatively better than the other.
+
+All you can say given the above results is that the data are consistent with what the experimenter predicted.
+
+\subsection{Individual differences in mean response times}
+
+```{r}
+df.subj <- data.frame(matrix(nrow=10,ncol=4))
+colnames(df.subj) <- c("subj","mean.alpha",
+                       "lower.alpha","upper.alpha")
+
+
+
+subj_intercept <- 
+    paste0("r_subj[",
+           as.character(unique(dat$subj)),
+           ",Intercept]")
+
+alpha_by_subj <- 
+  posterior_summary(mfit,
+                    variable = subj_intercept) %>%
+  as.data.frame() %>%
+  mutate(subject = 1:n()) %>%
+  ## reorder plot by magnitude of mean:
+  arrange(Estimate) %>%
+  mutate(subject = factor(subject, 
+                          levels = subject))
+
+head(alpha_by_subj)
+
+ggplot(alpha_by_subj,
+       aes(x = Estimate, 
+           xmin = Q2.5, xmax = Q97.5, 
+           y = subject)) +
+  geom_point() +
+  geom_errorbarh()
+
+```
+
+\subsection{Correlated varying intercept varying slopes model}
+
+```{r}
+# Data
+load("Data/df_pupil.rda")
+head(df_pupil)
+```
+
+$psize_i \sim Normal(\mu_i,\sigma)$
+
+$\mu_i = \alpha_{subj[i]} + \beta_{subj[i]} \cdot load_i$
+
+$\begin{pmatrix} \alpha_{subj[i]} \\  \beta_{subj[i]} \end{pmatrix} \sim N_2\begin{pmatrix}\begin{pmatrix}\alpha \\ \beta \end{pmatrix} , \begin{pmatrix}\tau_{\alpha}^2 & \rho \tau_{\alpha} \tau_{\beta} \\ \rho \tau_{\alpha} \tau_{\beta} &  \tau_{\beta}^2 \end{pmatrix}\end{pmatrix}$
+
+```{r}
+
+```
+
+
